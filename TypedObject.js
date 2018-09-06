@@ -119,11 +119,32 @@ export class Struct {
   static structure() {
     return null;
   }
+
+  static define(fields, length = undefined) {
+    if (!structTypes.has(this)) {
+      throw new TypeError("Struct.define can only be applied to declared but not defined struct types");
+    }
+
+    if (structTypes.get(this) === true) {
+      throw new TypeError(`Struct type ${this.name} already defined`);
+    }
+
+    structTypes.set(this, true);
+    if (typeof length !== "undefined") {
+      addIndexedFields(this, this.structure(), fields, length);
+    } else {
+      addNamedFields(this, this.structure(), fields);
+    }
+
+    freeze(this.structure());
+    seal(this);
+  }
+
 }
 
 freeze(Struct);
 
-export const StructType = function(fields, lengthOrName, name) {
+export const StructType = function(fieldsOrSignal, lengthOrName, name) {
   const structure = [];
   class def extends Struct {
     constructor(...fieldValues) {
@@ -136,24 +157,40 @@ export const StructType = function(fields, lengthOrName, name) {
 
   defaults.set(def, null);
   coercersMap.set(def, makeStructCoercer(def));
-  structTypes.add(def);
-
-  if (typeof lengthOrName === "number") {
-    addIndexedFields(def, structure, fields, lengthOrName);
-  } else {
+  structTypes.set(def, false);
+  
+  if (fieldsOrSignal === declarationSignal) {
     name = lengthOrName;
-    addNamedFields(def, structure, fields);
+    defineProperty(def, "name", { value: name });
+  } else {
+    let fields = fieldsOrSignal;
+    if (typeof lengthOrName === "string") {
+      name = lengthOrName;
+      defineProperty(def, "name", { value: name });
+      def.define(fields);
+    } else {
+      if (typeof lengthOrName !== 'number') {
+        throw new TypeError("Invalid arguments");
+      }
+
+      defineProperty(def, "name", { value: name });
+      def.define(fields, lengthOrName);
+    }
   }
 
-  freeze(structure);
-  defineProperty(def, "name", { value: name });
 
-  return seal(def);
+  return def;
 };
+
+StructType.declare = function(name) {
+  return new StructType(declarationSignal, name);
+}
 
 const valuesMap = new WeakMap();
 const coercersMap = new WeakMap();
-const structTypes = new WeakSet();
+const structTypes = new WeakMap();
+
+const declarationSignal = Symbol("Struct declaration");
 const properSubClassSignal = Symbol("TypedObject struct sub-class");
 
 function addNamedFields(typeDefinition, structure, fields) {

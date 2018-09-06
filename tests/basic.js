@@ -1,4 +1,4 @@
-import { StructType, int32 } from "./TypedObject.js";
+import { StructType, int32 } from "../TypedObject.js";
 
 const Point2D = new StructType(
   [{ name: "x", type: int32 }, { name: "y", type: int32 }],
