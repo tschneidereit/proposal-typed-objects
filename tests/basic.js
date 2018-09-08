@@ -22,7 +22,7 @@ line.end = end;
 console.log(end === line.end);
 
 const Polygon = new StructType(
-  [{ name: 0, type: Point2D }, { name: 1, type: Point2D }, { name: 2, type: Point2D }],
+  [{ type: Point2D }, { type: Point2D }, { type: Point2D }],
   "Polygon"
 );
 let poly = new Polygon(line.start, line.end, new Point2D({ x: 0, y: 1 }));

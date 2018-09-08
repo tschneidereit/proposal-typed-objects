@@ -71,7 +71,7 @@ export class Struct {
         value = type(value);
       }
 
-      values.set(name, value);
+      values.set(i, value);
     }
 
     freeze(this);
@@ -84,7 +84,7 @@ export class Struct {
     for (let i = 0; i < structure.length; i++) {
       const field = structure[i];
       const type = field.type;
-      result += ` ${type.name}(${this[field.name]}),`;
+      result += ` ${type.name}(${this[i]}),`;
     }
     result += ` }`;
     return result;
@@ -96,6 +96,10 @@ export class Struct {
 
     for (let i = 0; i < structure.length; i++) {
       const { name, type } = structure[i];
+
+      if (name === undefined) {
+        name = i;
+      }
 
       if (!(name in sourceObject)) {
         throw new TypeError(`Field ${name} not found on source object ${sourceObject}`);
@@ -131,7 +135,7 @@ export class Struct {
 
     const structure = [];
     structTypes.set(this, structure);
-    addNamedFields(this, structure, fields);
+    addFields(this, structure, fields);
 
     freeze(structure);
     seal(this);
@@ -173,7 +177,7 @@ structTypes.set(Struct, freeze([]));
 const declarationSignal = Symbol("Struct declaration");
 const properSubClassSignal = Symbol("TypedObject struct sub-class");
 
-function addNamedFields(typeDefinition, structure, fields) {
+function addFields(typeDefinition, structure, fields) {
   for (let i = 0; i < fields.length; i++) {
     const { name, type, readonly = false } = fields[i];
 
@@ -183,35 +187,44 @@ function addNamedFields(typeDefinition, structure, fields) {
 
     const field = freeze({ name, type, readonly });
     defineProperty(structure, structure.length, { value: field });
-    addField(typeDefinition, field);
+    addField(typeDefinition, i, field);
   }
 }
 
-function addField(typeDefinition, { name, type, readonly }) {
+function addField(typeDefinition, index, { name, type, readonly }) {
   function getter() {
-    return valuesMap.get(this).get(name);
+    return valuesMap.get(this).get(index);
   }
 
   let setter;
   if (structTypes.has(type)) {
     setter = function(value) {
       if (!(value instanceof type)) {
-        throw new TypeError(`Wrong type for field "${name}": expected instance of ${type.name}, but got ${value}`);
+        throw new TypeError(`Wrong type for field "${index}": expected instance of ${type.name}, but got ${value}`);
       }
-      valuesMap.get(this).set(name, value);
+      valuesMap.get(this).set(index, value);
     }
   } else {
     setter = function(value) {
-      valuesMap.get(this).set(name, type(value));
+      valuesMap.get(this).set(index, type(value));
     }
   }
 
   if (readonly) {
     setter = function(_) {
-      throw new TypeError("Can't set readonly field '" + name + "'");
+      throw new TypeError("Can't set readonly field '" + index + "'");
     };
   }
-  defineProperty(typeDefinition.prototype, name, { get: getter, set: setter });
+
+  if (name) {
+    if (typeof name !== "symbol" && name >>> 0 + '' === name) {
+      throw new TypeError(`Invalid field name ${name}: field names cannot be valid index keys`);
+    }
+
+    defineProperty(typeDefinition.prototype, name, { get: getter, set: setter });
+  }
+
+  defineProperty(typeDefinition.prototype, index, { get: getter, set: setter });
 }
 
 const defaults = new WeakMap([
