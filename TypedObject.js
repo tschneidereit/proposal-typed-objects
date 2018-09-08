@@ -117,26 +117,23 @@ export class Struct {
   }
 
   static structure() {
-    return null;
+    return structTypes.get(this);
   }
 
-  static define(fields, length = undefined) {
+  static define(fields) {
     if (!structTypes.has(this)) {
       throw new TypeError("Struct.define can only be applied to declared but not defined struct types");
     }
 
-    if (structTypes.get(this) === true) {
+    if (structTypes.get(this)) {
       throw new TypeError(`Struct type ${this.name} already defined`);
     }
 
-    structTypes.set(this, true);
-    if (typeof length !== "undefined") {
-      addIndexedFields(this, this.structure(), fields, length);
-    } else {
-      addNamedFields(this, this.structure(), fields);
-    }
+    const structure = [];
+    structTypes.set(this, structure);
+    addNamedFields(this, structure, fields);
 
-    freeze(this.structure());
+    freeze(structure);
     seal(this);
   }
 
@@ -144,40 +141,22 @@ export class Struct {
 
 freeze(Struct);
 
-export const StructType = function(fieldsOrSignal, lengthOrName, name) {
-  const structure = [];
+export const StructType = function(fieldsOrSignal, name) {
   class def extends Struct {
     constructor(...fieldValues) {
       super(fieldValues, properSubClassSignal);
     }
-    static structure() {
-      return structure;
-    }
   }
+  defineProperty(def, "name", { value: name });
 
   defaults.set(def, null);
   coercersMap.set(def, makeStructCoercer(def));
-  structTypes.set(def, false);
+  structTypes.set(def, null);
   
-  if (fieldsOrSignal === declarationSignal) {
-    name = lengthOrName;
-    defineProperty(def, "name", { value: name });
-  } else {
+  if (fieldsOrSignal !== declarationSignal) {
     let fields = fieldsOrSignal;
-    if (typeof lengthOrName === "string") {
-      name = lengthOrName;
-      defineProperty(def, "name", { value: name });
-      def.define(fields);
-    } else {
-      if (typeof lengthOrName !== 'number') {
-        throw new TypeError("Invalid arguments");
-      }
-
-      defineProperty(def, "name", { value: name });
-      def.define(fields, lengthOrName);
-    }
+    def.define(fields);
   }
-
 
   return def;
 };
@@ -189,6 +168,7 @@ StructType.declare = function(name) {
 const valuesMap = new WeakMap();
 const coercersMap = new WeakMap();
 const structTypes = new WeakMap();
+structTypes.set(Struct, freeze([]));
 
 const declarationSignal = Symbol("Struct declaration");
 const properSubClassSignal = Symbol("TypedObject struct sub-class");
@@ -196,17 +176,12 @@ const properSubClassSignal = Symbol("TypedObject struct sub-class");
 function addNamedFields(typeDefinition, structure, fields) {
   for (let i = 0; i < fields.length; i++) {
     const { name, type, readonly = false } = fields[i];
-    const field = freeze({ name, type, readonly });
-    defineProperty(structure, structure.length, { value: field });
-    addField(typeDefinition, field);
-  }
-}
 
-function addIndexedFields(typeDefinition, structure, type, length) {
-  // For now, indexed fields can't be readonly.
-  const readonly = false;
-  for (let i = 0; i < length; i++) {
-    const field = freeze({ name: i, type, readonly });
+    if (!(structTypes.has(type) || defaults.has(type))) {
+      throw new TypeError(`Invalid type ${type} for field ${name}`);
+    }
+
+    const field = freeze({ name, type, readonly });
     defineProperty(structure, structure.length, { value: field });
     addField(typeDefinition, field);
   }
