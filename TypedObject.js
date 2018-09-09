@@ -51,7 +51,9 @@ export class Struct {
    */
   constructor(fieldValues, subClassSignal) {
     if (subClassSignal !== properSubClassSignal) {
-      throw new TypeError("Sub-classes of Struct can only be created using the `StructType` constructor");
+      throw new TypeError(
+        "Sub-classes of Struct can only be created using the `StructType` constructor"
+      );
     }
 
     const structure = new.target.structure();
@@ -61,11 +63,13 @@ export class Struct {
       const { name, type } = structure[i];
       let value = fieldValues[i];
 
-      if (typeof value === 'undefined') {
+      if (typeof value === "undefined") {
         value = defaults.get(type);
       } else if (structTypes.has(type)) {
         if (!(value instanceof type)) {
-          throw new TypeError(`Wrong type for argument ${i}: expected instance of ${type.name}, but got ${value}`);
+          throw new TypeError(
+            `Wrong type for argument ${i}: expected instance of ${type.name}, but got ${value}`
+          );
         }
       } else {
         value = type(value);
@@ -126,7 +130,9 @@ export class Struct {
 
   static define(fields) {
     if (!structTypes.has(this)) {
-      throw new TypeError("Struct.define can only be applied to declared but not defined struct types");
+      throw new TypeError(
+        "Struct.define can only be applied to declared but not defined struct types"
+      );
     }
 
     if (structTypes.get(this)) {
@@ -134,40 +140,82 @@ export class Struct {
     }
 
     const structure = [];
+
+    const baseStructure = this.__proto__.structure();
+    for (let i = 0; i < baseStructure.length; i++) {
+      defineProperty(structure, i, { value: baseStructure[i] });
+    }
+
     structTypes.set(this, structure);
     addFields(this, structure, fields);
 
     freeze(structure);
     seal(this);
   }
-
 }
 
 freeze(Struct);
 
-export const StructType = function(fieldsOrSignal, name) {
-  class def extends Struct {
-    constructor(...fieldValues) {
-      super(fieldValues, properSubClassSignal);
+export const StructType = function(signalOrBaseOrFields, nameOrBaseOrFields, name = undefined) {
+  let inDeclarationMode = false;
+  let base = Struct;
+  let fields;
+
+  // Overloads that apply in declaration mode.
+  if (signalOrBaseOrFields === declarationSignal) {
+    inDeclarationMode = true;
+
+    // Parameters 1 and 2 are different depending on the overload:
+    // 1: Base class or name
+    // 2: Name or undefined
+    if (name) {
+      base = nameOrBaseOrFields;
+    } else {
+      name = nameOrBaseOrFields;
+    }
+  } else {
+    if (name !== undefined) {
+      // If `name` is given, the overload must be
+      // 0: Base class
+      // 1: Fields
+      // 2: Name
+      base = signalOrBaseOrFields;
+      fields = nameOrBaseOrFields;
+    } else {
+      // Otherwise, it must be
+      // 0: Fields
+      // 1: Name
+      fields = signalOrBaseOrFields;
+      name = nameOrBaseOrFields;
     }
   }
+
+  class def extends base {
+    constructor(...fieldValues) {
+      if (base === Struct) {
+        super(fieldValues, properSubClassSignal);
+      } else {
+        super(...fieldValues);
+      }
+    }
+  }
+
   defineProperty(def, "name", { value: name });
 
   defaults.set(def, null);
   coercersMap.set(def, makeStructCoercer(def));
   structTypes.set(def, null);
-  
-  if (fieldsOrSignal !== declarationSignal) {
-    let fields = fieldsOrSignal;
+
+  if (!inDeclarationMode) {
     def.define(fields);
   }
 
   return def;
 };
 
-StructType.declare = function(name) {
-  return new StructType(declarationSignal, name);
-}
+StructType.declare = function(baseOrName, name = undefined) {
+  return new StructType(declarationSignal, baseOrName, name);
+};
 
 const valuesMap = new WeakMap();
 const coercersMap = new WeakMap();
@@ -178,12 +226,13 @@ const declarationSignal = Symbol("Struct declaration");
 const properSubClassSignal = Symbol("TypedObject struct sub-class");
 
 function addFields(typeDefinition, structure, fields) {
-  let i = 0;
+  let i = structure.length;
   for (const { name, type, readonly = false } of fields) {
     if (!(structTypes.has(type) || defaults.has(type))) {
       throw new TypeError(`Invalid type ${type} for field ${name}`);
     }
 
+    // TODO: remove name
     const field = freeze({ name, type, readonly });
     defineProperty(structure, structure.length, { value: field });
     addField(typeDefinition, i, field);
@@ -201,14 +250,16 @@ function addField(typeDefinition, index, { name, type, readonly }) {
   if (structTypes.has(type)) {
     setter = function(value) {
       if (!(value instanceof type)) {
-        throw new TypeError(`Wrong type for field "${index}": expected instance of ${type.name}, but got ${value}`);
+        throw new TypeError(
+          `Wrong type for field "${index}": expected instance of ${type.name}, but got ${value}`
+        );
       }
       valuesMap.get(this).set(index, value);
-    }
+    };
   } else {
     setter = function(value) {
       valuesMap.get(this).set(index, type(value));
-    }
+    };
   }
 
   if (readonly) {
@@ -218,7 +269,7 @@ function addField(typeDefinition, index, { name, type, readonly }) {
   }
 
   if (name) {
-    if (typeof name !== "symbol" && name >>> 0 + '' === name) {
+    if (typeof name !== "symbol" && name >>> (0 + "") === name) {
       throw new TypeError(`Invalid field name ${name}: field names cannot be valid index keys`);
     }
 
