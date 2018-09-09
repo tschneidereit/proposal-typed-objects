@@ -178,9 +178,8 @@ const declarationSignal = Symbol("Struct declaration");
 const properSubClassSignal = Symbol("TypedObject struct sub-class");
 
 function addFields(typeDefinition, structure, fields) {
-  for (let i = 0; i < fields.length; i++) {
-    const { name, type, readonly = false } = fields[i];
-
+  let i = 0;
+  for (const { name, type, readonly = false } of fields) {
     if (!(structTypes.has(type) || defaults.has(type))) {
       throw new TypeError(`Invalid type ${type} for field ${name}`);
     }
@@ -188,6 +187,8 @@ function addFields(typeDefinition, structure, fields) {
     const field = freeze({ name, type, readonly });
     defineProperty(structure, structure.length, { value: field });
     addField(typeDefinition, i, field);
+
+    i++;
   }
 }
 
