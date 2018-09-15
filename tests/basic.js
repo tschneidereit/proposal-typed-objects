@@ -1,10 +1,15 @@
-import { StructType, int32 } from "../TypedObject.js";
+/*---
+flags: [module]
+---*/
+
+import { StructType, int32 } from "./../TypedObject.js";
 
 const Point2D = new StructType(
   [{ name: "x", type: int32 }, { name: "y", type: int32 }],
   [],
   "Point2D"
 );
+
 const Line = new StructType(
   [{ name: "start", type: Point2D }, { name: "end", type: Point2D }],
   [
@@ -26,51 +31,26 @@ const Line = new StructType(
 );
 
 let start = new Point2D(10);
-console.log(start + "");
+assert.sameValue(start.x, 10);
+assert.sameValue(start[0], 10);
+assert.sameValue(start.y, 0);
+assert.sameValue(start[1], 0);
 
 let line = new Line(start);
-console.log(line + "");
+assert.sameValue(line.start, start);
+assert.sameValue(line[0], start);
+assert.sameValue(line.end, null);
+assert.sameValue(line[1], line.end);
 
-let endInput = Point2D.fromObject({ x: "10", y: 20.5 });
-line.end = endInput;
-console.log(line + "");
-console.log(endInput !== line.end);
-console.log(line.length);
-line.moveStart(5, 5);
-console.log(line + "");
+line.end = Point2D.fromObject({ x: "10", y: 20.5 });
+assert.sameValue(line.length, 20);
+line.moveStart(10, 20);
+assert.sameValue(line.length, 10);
 
 let end = new Point2D();
 line.end = end;
-console.log(end === line.end);
-
-const Polygon = new StructType(
-  [{ type: Point2D }, { type: Point2D }, { type: Point2D }],
-  [],
-  "Polygon"
-);
-let poly = new Polygon(line.start, line.end, new Point2D({ x: 0, y: 1 }));
-console.log(poly + "");
-
-poly[0] = Point2D.fromObject({ x: 10, y: 20 });
-console.log(poly[0] + "");
-
-let startObj = { x: 10, y: 20 };
-end = new Point2D({ x: 10, y: 20 });
-let l2 = new Line(Point2D.fromObject(startObj), end);
-
-end = new Point2D(10, 20);
-l2 = new Line(Point2D.fromObject(startObj), Point2D.fromObject(end));
-let l3 = Line.fromObject({ start: startObj, end: end });
-l3.end === l2.end;
-l3.end !== l2.end;
-
-!(startObj instanceof Point2D);
-l2.start instanceof Point2D;
-l2.start !== startObj;
-
-end instanceof Point2D;
-l2.end instanceof Point2D;
-l2.end === end;
-
-startObj.x = 20;
-end.x = 20;
+assert.sameValue(line.end, end);
+assert.sameValue(line[1], end);
+line[1] = new Point2D();
+assert.notSameValue(line.end, end);
+assert.sameValue(line.end, line[1]);
