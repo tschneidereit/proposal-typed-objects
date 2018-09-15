@@ -128,7 +128,7 @@ export class Struct {
     return structTypes.get(this);
   }
 
-  static define(fields) {
+  static define(fields, untypedMembers) {
     if (!structTypes.has(this)) {
       throw new TypeError(
         "Struct.define can only be applied to declared but not defined struct types"
@@ -148,6 +148,7 @@ export class Struct {
 
     structTypes.set(this, structure);
     addFields(this, structure, fields);
+    addUntypedMembers(this, structure, untypedMembers);
 
     freeze(structure);
     seal(this);
@@ -156,41 +157,55 @@ export class Struct {
 
 freeze(Struct);
 
-export const StructType = function(signalOrBaseOrFields, nameOrBaseOrFields, name = undefined) {
-  let inDeclarationMode = false;
+export const StructType = function(
+  baseOrFields,
+  untypedMembersOrFields,
+  nameOrUntypedMembers,
+  name = undefined
+) {
   let base = Struct;
   let fields;
+  let untypedMembers;
 
-  // Overloads that apply in declaration mode.
-  if (signalOrBaseOrFields === declarationSignal) {
-    inDeclarationMode = true;
-
-    // Parameters 1 and 2 are different depending on the overload:
-    // 1: Base class or name
-    // 2: Name or undefined
-    if (name) {
-      base = nameOrBaseOrFields;
-    } else {
-      name = nameOrBaseOrFields;
-    }
+  if (name !== undefined) {
+    // If `name` is given, the overload must be
+    // 0: Base class
+    // 1: Typed fields
+    // 2: Untyped fields and methods
+    // 3: Name
+    base = baseOrFields;
+    fields = untypedMembersOrFields;
+    untypedMembers = nameOrUntypedMembers;
   } else {
-    if (name !== undefined) {
-      // If `name` is given, the overload must be
-      // 0: Base class
-      // 1: Fields
-      // 2: Name
-      base = signalOrBaseOrFields;
-      fields = nameOrBaseOrFields;
-    } else {
-      // Otherwise, it must be
-      // 0: Fields
-      // 1: Name
-      fields = signalOrBaseOrFields;
-      name = nameOrBaseOrFields;
-    }
+    // Otherwise, it must be
+    // 1: Typed fields
+    // 2: Untyped fields and methods
+    // 2: Name
+    fields = baseOrFields;
+    untypedMembers = untypedMembersOrFields;
+    name = nameOrUntypedMembers;
   }
 
+  const def = createStructType(base, name);
+  def.define(fields, untypedMembers);
+
+  return def;
+};
+
+StructType.declare = function(nameOrBase, name = undefined) {
+  let base = nameOrBase;
+
+  if (name === undefined) {
+    name = nameOrBase;
+    base = Struct;
+  }
+
+  return createStructType(base, name);
+};
+
+function createStructType(base, name) {
   class def extends base {
+    // TODO: properly propagate the subclassing signal through the inheritance chain.
     constructor(...fieldValues) {
       if (base === Struct) {
         super(fieldValues, properSubClassSignal);
@@ -206,23 +221,14 @@ export const StructType = function(signalOrBaseOrFields, nameOrBaseOrFields, nam
   coercersMap.set(def, makeStructCoercer(def));
   structTypes.set(def, null);
 
-  if (!inDeclarationMode) {
-    def.define(fields);
-  }
-
   return def;
-};
-
-StructType.declare = function(baseOrName, name = undefined) {
-  return new StructType(declarationSignal, baseOrName, name);
-};
+}
 
 const valuesMap = new WeakMap();
 const coercersMap = new WeakMap();
 const structTypes = new WeakMap();
 structTypes.set(Struct, freeze([]));
 
-const declarationSignal = Symbol("Struct declaration");
 const properSubClassSignal = Symbol("TypedObject struct sub-class");
 
 function addFields(typeDefinition, structure, fields) {
@@ -238,6 +244,12 @@ function addFields(typeDefinition, structure, fields) {
     addField(typeDefinition, i, field);
 
     i++;
+  }
+}
+
+function addUntypedMembers(typeDefinition, structure, untypedMembers) {
+  for (const descriptor of untypedMembers) {
+    addNamedMember(typeDefinition, descriptor.name, descriptor);
   }
 }
 
@@ -268,15 +280,27 @@ function addField(typeDefinition, index, { name, type, readonly }) {
     };
   }
 
-  if (name) {
-    if (typeof name !== "symbol" && name >>> (0 + "") === name) {
-      throw new TypeError(`Invalid field name ${name}: field names cannot be valid index keys`);
-    }
+  defineProperty(typeDefinition.prototype, index, { get: getter, set: setter });
 
-    defineProperty(typeDefinition.prototype, name, { get: getter, set: setter });
+  if (name) {
+    addNamedMember(typeDefinition, name, { get: getter, set: setter, type, readonly });
+  }
+}
+
+function addNamedMember(typeDefinition, name, descriptor) {
+  if (typeof name === "string") {
+    if (isIndexKey(name)) {
+      throw new TypeError(`Invalid member name ${name}: member names cannot be valid index keys`);
+    }
+  } else if (typeof name !== "symbol") {
+    throw new TypeError(`Invalid member name ${name}: member names must be strings or symbols`);
   }
 
-  defineProperty(typeDefinition.prototype, index, { get: getter, set: setter });
+  defineProperty(typeDefinition.prototype, name, descriptor);
+}
+
+function isIndexKey(name) {
+  return name >>> (0 + "") === name;
 }
 
 const defaults = new WeakMap([
