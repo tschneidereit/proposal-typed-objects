@@ -54,3 +54,15 @@ assert.sameValue(line[1], end);
 line[1] = new Point2D();
 assert.notSameValue(line.end, end);
 assert.sameValue(line.end, line[1]);
+
+assert.throws(TypeError, () => {
+  new StructType([{ name: "member", type: int32}, {name: "member", type: int32}], [], "Type");
+}, "Repeating named typed field");
+
+assert.throws(TypeError, () => {
+  new StructType([{ name: "member", type: int32}], [{name: "member", value: 42}], [], "Type");
+}, "Repeating named typed field as untyped member");
+
+assert.throws(TypeError, () => {
+  new StructType([], [{ name: "member", type: 7}, {name: "member", value: 42}], [], "Type");
+}, "Repeating untyped member");
