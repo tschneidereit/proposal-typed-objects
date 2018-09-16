@@ -220,14 +220,19 @@ function createStructType(base, name) {
   defaults.set(def, null);
   coercersMap.set(def, makeStructCoercer(def));
   structTypes.set(def, null);
+  namedStructMembers.set(def, { __proto__: namedStructMembers.get(base) });
 
   return def;
 }
 
 const valuesMap = new WeakMap();
 const coercersMap = new WeakMap();
+
 const structTypes = new WeakMap();
 structTypes.set(Struct, freeze([]));
+
+const namedStructMembers = new WeakMap();
+namedStructMembers.set(Struct, freeze({ __proto__: null }));
 
 const properSubClassSignal = Symbol("TypedObject struct sub-class");
 
@@ -239,7 +244,7 @@ function addFields(typeDefinition, structure, fields) {
     }
 
     // TODO: remove name
-    const field = freeze({ name, type, readonly });
+    const field = freeze({ __proto__: null, name, type, readonly });
     defineProperty(structure, structure.length, { value: field });
     addField(typeDefinition, i, field);
 
@@ -280,10 +285,16 @@ function addField(typeDefinition, index, { name, type, readonly }) {
     };
   }
 
-  defineProperty(typeDefinition.prototype, index, { get: getter, set: setter });
+  defineProperty(typeDefinition.prototype, index, { __proto__: null, get: getter, set: setter });
 
   if (name) {
-    addNamedMember(typeDefinition, name, { get: getter, set: setter, type, readonly });
+    addNamedMember(typeDefinition, name, {
+      __proto__: null,
+      get: getter,
+      set: setter,
+      type,
+      readonly
+    });
   }
 }
 
@@ -296,7 +307,34 @@ function addNamedMember(typeDefinition, name, descriptor) {
     throw new TypeError(`Invalid member name ${name}: member names must be strings or symbols`);
   }
 
+  const namedMembers = namedStructMembers.get(typeDefinition);
+  validateOverride(namedMembers, name, descriptor);
+  defineProperty(namedMembers, name, { value: descriptor });
+
   defineProperty(typeDefinition.prototype, name, descriptor);
+}
+
+function validateOverride(namedMembers, name, descriptor) {
+  const existingMember = namedMembers[name];
+  if (!existingMember) {
+    return;
+  }
+
+  if (existingMember.readonly) {
+    throw new TypeError(`Can't override readonly field ${name}`);
+  } else if (descriptor.readonly) {
+    throw new TypeError(`Can't override read-write field ${name} with readonly field`);
+  }
+
+  if (existingMember.type) {
+    if (!descriptor.type) {
+      throw new TypeError(`Can't override typed field ${name} with untyped field`);
+    } else if (existingMember.type !== descriptor.type) {
+      throw new TypeError(`Can't override typed field ${name}: types must match exactly. Expected ${existingMember.type.name}, got ${descriptor.type.name}`);
+    }
+  } else if (descriptor.type) {
+    throw new TypeError(`Can't override untyped field ${name} with typed field`);
+  }
 }
 
 function isIndexKey(name) {
