@@ -57,7 +57,7 @@ export class Struct {
     }
 
     const structure = new.target.structure();
-    const values = new Map();
+    const values = [];
 
     for (let i = 0; i < structure.length; i++) {
       const { name, type } = structure[i];
@@ -75,7 +75,7 @@ export class Struct {
         value = type(value);
       }
 
-      values.set(i, value);
+      defineProperty(values, i, { value, writable: true });
     }
 
     freeze(this);
@@ -260,7 +260,7 @@ function addUntypedMembers(typeDefinition, structure, untypedMembers) {
 
 function addField(typeDefinition, index, { name, type, readonly }) {
   function getter() {
-    return valuesMap.get(this).get(index);
+    return valuesMap.get(this)[index];
   }
 
   let setter;
@@ -271,11 +271,11 @@ function addField(typeDefinition, index, { name, type, readonly }) {
           `Wrong type for field "${index}": expected instance of ${type.name}, but got ${value}`
         );
       }
-      valuesMap.get(this).set(index, value);
+      valuesMap.get(this)[index] = value;
     };
   } else {
     setter = function(value) {
-      valuesMap.get(this).set(index, type(value));
+      valuesMap.get(this)[index] = type(value);
     };
   }
 

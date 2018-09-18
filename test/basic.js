@@ -55,6 +55,13 @@ line[1] = new Point2D();
 assert.notSameValue(line.end, end);
 assert.sameValue(line.end, line[1]);
 
+// TODO: enable these once typed objects really do have fields as own properties
+// assert(line.hasOwnProperty(0));
+// assert(line.hasOwnProperty(1));
+assert(!line.hasOwnProperty(2));
+assert(!line.hasOwnProperty("start"));
+assert(!line.hasOwnProperty("end"));
+
 assert.throws(TypeError, () => {
   new StructType([{ name: "member", type: int32}, {name: "member", type: int32}], [], "Type");
 }, "Repeating named typed field");
