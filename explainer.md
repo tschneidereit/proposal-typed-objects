@@ -6,6 +6,8 @@ The explainer proceeds as follows:
 
 - [Explainer for Typed Objects](#explainer-for-typed-objects)
     - [Outline](#outline)
+    - [Overview](#overview)
+        - [Characteristics of Struct types](#characteristics-of-struct-types)
     - [Type definitions](#type-definitions)
         - [Primitive type definitions](#primitive-type-definitions)
         - [Struct type definitions](#struct-type-definitions)
@@ -13,6 +15,24 @@ The explainer proceeds as follows:
             - [Untyped member definitions](#untyped-member-definitions)
     - [Instantiation](#instantiation)
         - [Instantiating struct types](#instantiating-struct-types)
+
+## Overview
+
+Typed Objects add a new type of objects to JavaScript: objects with pre-defined storage for member fields with equally pre-defined types. This proposal focuses on mutable Struct types, but the concept is applicable to Value types, too.
+
+### Characteristics of Struct types
+
+Struct Types have these characteristics:
+ - Fixed layout: a Struct's layout is fixed during construction, i.e. it is sealed during its entire lifetime.
+ - Indexed typed member fields: a Struct has as own members an indexed list of typed fields, as given in its [definition](#struct-type-definitions).
+ - Possible field types: typed fields can hold values as described in the [section on primitive type definitions](#primitive-type-definitions), or references to other Struct type instances.
+ - Named aliases as prototype accessors: typed fields can optionally be given a—String or Symbol—name, in which case an accessor is installed on the prototype.
+ - Untyped members: Struct types can also be given a list of untyped members—both values and accessors—which are installed on its prototype.
+ - Inheritance: Struct types can extend other Struct types (but not other JS classes/constructor functions). Additional typed fields are appended to the end of the parent type's indexed list.
+ - Prototypes immutable in identity and shape: a Struct type's prototype chain is immutable—`setPrototypeOf` throws—and all prototypes are sealed.
+ - Support for recursive types: Struct types can be forward-declared and filled in later, enabling support for—directly or indirectly—recursive types.
+
+See individual sections for more details on these characteristics.
 
 ## Type definitions
 
