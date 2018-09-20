@@ -13,8 +13,21 @@ The explainer proceeds as follows:
         - [Struct type definitions](#struct-type-definitions)
             - [Typed field definitions](#typed-field-definitions)
             - [Untyped member definitions](#untyped-member-definitions)
+            - [Struct type forward declaration](#struct-type-forward-declaration)
     - [Instantiation](#instantiation)
         - [Instantiating struct types](#instantiating-struct-types)
+    - [Struct type details](#struct-type-details)
+        - [Typed fields](#typed-fields)
+            - [Reading from typed fields](#reading-from-typed-fields)
+            - [Writing to typed fields](#writing-to-typed-fields)
+            - [Immutable typed fields](#immutable-typed-fields)
+            - [Named typed fields](#named-typed-fields)
+        - [Untyped members](#untyped-members)
+        - [Inheritance](#inheritance)
+            - [Overriding named fields and members](#overriding-named-fields-and-members)
+        - [Prototypes](#prototypes)
+        - [Shared Base Constructors](#shared-base-constructors)
+        - [Immutable prototypes](#immutable-prototypes)
 
 ## Overview
 
@@ -26,11 +39,11 @@ Struct Types have these characteristics:
  - Fixed layout: a Struct's layout is fixed during construction, i.e. it is sealed during its entire lifetime.
  - Indexed typed member fields: a Struct has as own members an indexed list of typed fields, as given in its [definition](#struct-type-definitions).
  - Possible field types: typed fields can hold values as described in the [section on primitive type definitions](#primitive-type-definitions), or references to other Struct type instances.
- - Named aliases as prototype accessors: typed fields can optionally be given a—String or Symbol—name, in which case an accessor is installed on the prototype.
- - Untyped members: Struct types can also be given a list of untyped members—both values and accessors—which are installed on its prototype.
+ - Named aliases as `prototype` accessors: typed fields can optionally be given a—String or Symbol—name, in which case an accessor is installed on the `prototype`.
+ - Untyped members: Struct types can also be given a list of untyped members—both values and accessors—which are installed on its `prototype`.
+ - Support for recursive types: Struct types can be forward-declared and filled in later, enabling support for—directly or indirectly—recursive types.
  - Inheritance: Struct types can extend other Struct types (but not other JS classes/constructor functions). Additional typed fields are appended to the end of the parent type's indexed list.
  - Prototypes immutable in identity and shape: a Struct type's prototype chain is immutable—`setPrototypeOf` throws—and all prototypes are sealed.
- - Support for recursive types: Struct types can be forward-declared and filled in later, enabling support for—directly or indirectly—recursive types.
 
 See individual sections for more details on these characteristics.
 
@@ -121,6 +134,25 @@ An untyped member definition is an `object` definining the characteristics of a 
      - `set` [optional] - A `function` used as the member's setter.
  - `name` - A `string` or `symbol` used as an optional name for the field. If given, an accessor is created that allows reading and, if the field is writable, writing the field using a name in addition to its index.
 
+#### Struct type forward declaration
+
+To enable recursive types, it's possible to declare a Struct type without defining it. Declaration is done using `StructType.declare`, which has two overloads:
+```js
+StructType.declare(name)
+StructType.declare(baseType, name)
+```
+
+The first overload declares a Struct type that extends `Struct`, the second creates a Struct type that extends the given `baseType`.
+
+The type can then be defined using its `define` method:
+```js
+const LinkedList = StructType.declare("LinkedList");
+LinkedList.define([{ name: "next", type: LinkedList }], []);
+```
+
+`define` takes two parameters, `typedFields` and `untypedMembers`, and performs the same steps for defining the type's fields and `prototype` members as `new StructType` does.
+
+
 ## Instantiation
 
 ### Instantiating struct types
@@ -151,3 +183,110 @@ let from = new Point(42, 7);
 let line = new Line(from);
 console.log(line.from === from, line[0] === line.from, line.from.x); //logs "true, true, 42"
 ```
+
+## Struct type details
+
+### Typed fields
+
+Struct types will be specified as a new kind of [Integer-indexed Exotic Object](https://tc39.github.io/ecma262/#sec-integer-indexed-exotic-objects): Struct types have their property access related internal methods overridden to perform type checking and coercion, and a Struct instance has a list of internal slots as storage for its typed member fields.
+
+#### Reading from typed fields
+
+Reading a typed field doesn't involve any new behavior.
+
+For fields with numeric primitive types, it's largely comparable to reading from Typed Arrays in that the stored value is returned as a `Number`.
+
+For fields with all other types, the value is returned as-is.
+
+#### Writing to typed fields
+
+When writing to a typed field, behavior depends on the field's type:
+ - for [primitive types](#primitive-type-definitions), the type's coercion function is applied to the value, resulting in a coerced value to be stored, or an exception being thrown.
+ - for [Struct types](#struct-type-definitions), the value is type checked: if it's not an instance of the expected type or of a type extending it, a `TypeError` is thrown. No coercion or conversion is attempted.
+
+Writing to a field that doesn't exist on the Struct type throws.
+
+#### Immutable typed fields
+
+Typed fields can be marked as `readonly`, in which case any attempt to write to them after the Struct's construction throws an error.
+
+#### Named typed fields
+
+When defining a Struct type, its typed fields can optionally be given names. These names can be strings or symbols, with the only restriction being that a string name can't be a valid numeric index, i.e. [CanonicalNumericIndexString](https://tc39.github.io/ecma262/#sec-canonicalnumericindexstring) must return `undefined`.
+
+If a typed field is named, an accessor with that name will be added to the Struct type's `prototype`. That accessor simply forwards `[[Get]]` and `[[Set]]` operations to the field's numeric index. Note that custom behavior can be implemented using [untyped members](#untyped-members).
+
+### Untyped members
+
+In addition to typed fields, Struct type definitions can also include untyped members. These are installed as values or accessors on the Struct's `prototype`, and can be used to implement custom logic for properties, and methods. Since a Struct's prototype is immutable after creation, all members have to be [supplied](#untyped-member-definitions) at the time the Struct type is defined.
+
+Untyped members are installed after [named typed fields](#named-typed-fields). It is an error for an untyped member to have the same name as a named field.
+
+Untyped members' names can be strings or symbols, with the only restriction being that a string name can't be a valid numeric index, i.e. [CanonicalNumericIndexString](https://tc39.github.io/ecma262/#sec-canonicalnumericindexstring) must return `undefined`.
+
+### Inheritance
+
+Struct types can extend other Struct types. If no base type is given, a Struct type will extend `Struct`, which is itself a Struct type without any typed fields.
+
+A Struct type appends additional internal slots to the instances' layout: existing slots are never overridden, so sub-types can safely be treated as instances of their base types.
+
+#### Overriding named fields and members
+
+Named fields and members can be overridden, however there are a few restrictions:
+ - Overriding a typed field must preserve both its type and whether it's mutable or immutable.
+ - A typed field cannot override an untyped member.
+ - An untyped member cannot override a typed field.
+
+### Prototypes
+
+Prototypes are set up the same way as for classes: the constructor function form one prototype chain, starting with `Struct`, and instances have another prototype chain, starting with `Struct.prototype`.
+
+E.g., for the Struct type `Point`
+ - the `[[Prototype]]` is set to `Struct`
+ - the `[[Prototype]]` of instances of `Point` is set to `Point.prototype`
+ - The `[[Prototype]]` of `Point.prototype` is set to `Struct.prototype`
+
+### Shared Base Constructors
+
+Analogously to typed arrays, which all inherit from
+[`%TypedArray%`](https://tc39.github.io/ecma262/#sec-%typedarray%-intrinsic-object),
+Struct types and their instances inherit from shared base constructors:
+
+The `[[Prototype]]` of `StructType.prototype` is `%Type%.prototype`, where
+`%Type%` is an intrinsic that's not directly exposed.
+
+The `[[Prototype]]` of `Point.prototype` is `%Struct%.prototype`, where
+`%Struct%` is an intrinsic that's not directly exposed.
+
+The `[[Prototype]]` of `Point.Array.prototype` is `%Struct%.Array.prototype`,
+where, again, `%Struct%` is an intrinsic that's not directly exposed.
+
+All `[[Prototype]]`s in these hierarchies are set immutably.
+
+In code:
+
+```js
+const Point = new StructType({{ name: "x", type: float64 }, { name: "y", type: float64 }});
+const Line = new StructType({{ name: "from", type: Point }, { name: "to", type: Point }});
+
+let point = new Point();
+let points1 = new Point.Array(2);
+let points2 = new Point.Array(5);
+let line = new Line();
+
+// These all yield `true`:
+point.__proto__ === Point.prototype;
+line.__proto__ === Line.prototype;
+line.from.__proto__ === Point.prototype;
+
+points1.__proto__ === Point.Array.prototype;
+points2.__proto__ === points1.__proto__;
+
+// Pretending %Struct% is directly exposed:
+Point.prototype.__proto__ === %Struct%.prototype;
+Point.Array.prototype.__proto__ === %Struct%.Array.prototype;
+```
+
+### Immutable prototypes
+
+To ensure stability of the relationship between typed fields and their named accessors, the prototype chain of all Struct types is frozen. This means that the identity of the prototypes is immutable—`setPrototypeOf` throws—and the `prototype` objects themselves are frozen—their members can't be mutated and no new members can be added.
