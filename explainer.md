@@ -55,31 +55,16 @@ The central part of the Typed Objects specification are *type definition objects
 The system comes predefined with type definitions for all the
 primitive types:
 
-    uint8  int8  float32 any
-    uint16 int16 float64 string
-    uint32 int32         object
+    uint8  int8          any
+    uint16 int16         string
+    uint32 int32 float32 object
+    uint64 int64 float64
 
-These primitive type definitions represent the various kinds of
-existing JS values. For example, the type `float64` describes a JS
-number, and `string` defines a JS string. The type `object` indicates
-a pointer to a JS object. Finally, `any` can be any kind of value
-(`undefined`, number, string, pointer to object, etc).
+These primitive type definitions represent the various kinds of existing JS values. For example, the type `float64` describes a JS number, `uint64` a BigNum, and `string` defines a JS string. The type `object` indicates a pointer to a JS object. Finally, `any` can be any kind of value (`undefined`, number, string, pointer to object, etc).
 
-Primitive type definitions can be called, in which case they act as a
-kind of cast or coercion. For numeric types, these coercions will
-first convert the value to a number (as is common with JS) and then
-coerce the value into the specified size:
+Primitive type definitions can be called, in which case they act as a kind of cast or coercion. If you're familiar with C, these coercions are basically equivalent to C casts.
 
-```js
-int8(128)   // returns 127
-int8("128") // returns 127
-int8(2.2)   // returns 2
-int8({valueOf() {return "2.2"}}) // returns 2
-int8({}) // returns 0, because Number({}) results in NaN, which is replaced with the default value 0.
-```
-
-If you're familiar with C, these coercions are basically equivalent to
-C casts.
+For numeric types, the behavior is identical to the [coercion performed when setting an element](https://tc39.github.io/ecma262/#sec-numbertorawbytes) on a Typed Array of the equivalent type.
 
 In some cases, coercions can throw. For example, in the case of
 `object`, the value being coerced must be an object or `null`:
@@ -182,7 +167,7 @@ Struct types will be specified as a new kind of [Integer-indexed Exotic Object](
 
 Reading a typed field doesn't involve any new behavior.
 
-For fields with numeric primitive types, it's largely comparable to reading from Typed Arrays in that the stored value is returned as a `Number`.
+For fields with numeric primitive types, it's identical to reading from Typed Arrays: the value [is returned as a BigInt for `int64` and `uint64`, and a Number for all other numeric types](https://tc39.github.io/proposal-bigint/#sec-rawbytestonumber).
 
 For fields with all other types, the value is returned as-is.
 
