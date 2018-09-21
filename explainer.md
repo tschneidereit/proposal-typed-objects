@@ -179,8 +179,6 @@ When writing to a typed field, behavior depends on the field's type:
  - for [primitive types](#primitive-type-definitions), the type's coercion function is applied to the value, resulting in a coerced value to be stored, or an exception being thrown.
  - for [Struct types](#struct-type-definitions), the value is type checked: if it's not an instance of the expected type or of a type extending it, a `TypeError` is thrown. No coercion or conversion is attempted. See [below for details on type-checking for subtypes](#type-checking-for-subtypes).
 
-Writing to a field that doesn't exist on the Struct type throws.
-
 #### Immutable typed fields
 
 Typed fields can be marked as `readonly`, in which case any attempt to write to them after the Struct's construction throws an error.
