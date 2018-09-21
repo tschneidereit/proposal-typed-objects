@@ -62,7 +62,7 @@ primitive types:
     uint32 int32 float32 object
     uint64 int64 float64
 
-These primitive type definitions represent the various kinds of existing JS values. For example, the type `float64` describes a JS number, `uint64` a BigNum, and `string` defines a JS string. The type `object` indicates a pointer to a JS object. Finally, `any` can be any kind of value (`undefined`, number, string, pointer to object, etc).
+These primitive type definitions represent the various kinds of existing JS values. For example, the type `int32` describes a JS Number, `uint64` a BigNum, and `string` defines a JS string. The type `object` indicates a pointer to a JS object. Finally, `any` can be any kind of value (`undefined`, number, string, pointer to object, etc).
 
 Primitive type definitions can be called, in which case they act as a kind of cast or coercion. If you're familiar with C, these coercions are basically equivalent to C casts.
 
