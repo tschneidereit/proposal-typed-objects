@@ -22,6 +22,8 @@ The explainer proceeds as follows:
             - [Immutable typed fields](#immutable-typed-fields)
             - [Named typed fields](#named-typed-fields)
         - [Inheritance](#inheritance)
+            - [Layout of subtypes](#layout-of-subtypes)
+            - [Type-checking for subtypes](#type-checking-for-subtypes)
             - [Overriding named fields](#overriding-named-fields)
             - [Exotic behavior of Struct type instances](#exotic-behavior-of-struct-type-instances)
         - [Prototypes](#prototypes)
@@ -175,7 +177,7 @@ For fields with all other types, the value is returned as-is.
 
 When writing to a typed field, behavior depends on the field's type:
  - for [primitive types](#primitive-type-definitions), the type's coercion function is applied to the value, resulting in a coerced value to be stored, or an exception being thrown.
- - for [Struct types](#struct-type-definitions), the value is type checked: if it's not an instance of the expected type or of a type extending it, a `TypeError` is thrown. No coercion or conversion is attempted.
+ - for [Struct types](#struct-type-definitions), the value is type checked: if it's not an instance of the expected type or of a type extending it, a `TypeError` is thrown. No coercion or conversion is attempted. See [below for details on type-checking for subtypes](#type-checking-for-subtypes).
 
 Writing to a field that doesn't exist on the Struct type throws.
 
@@ -193,14 +195,34 @@ If a typed field is named, an accessor with that name will be added to the Struc
 
 Struct types can extend other Struct types. If no base type is given, a Struct type will extend `Struct`, which is itself a Struct type without any typed fields.
 
-A Struct type appends additional internal slots to the instances' layout: existing slots are never overridden, so sub-types can safely be treated as instances of their base types.
+#### Layout of subtypes
+
+A Struct type appends additional internal slots to the instances' layout: existing slots are never overridden, so subtypes can safely be treated as instances of their base types.
+
+#### Type-checking for subtypes
+
+When assigning to a field typed as a Struct type reference, instances of the expected Struct type itself and of all subtypes are acceptable.
+
+To guarantee that an object passing the type-check can be treated as an instance of the expected type, the check has to guarantee that the object has, at least, the type's typed member fields. A simple `instanceof` check wouldn't work to ensure this: any arbitrary object can be made to pass such a test.
+
+Instead, to facilitate type-checks, Struct type instances have an internal slot `[[StructType]]`, containing a reference to the associated Struct type constructor. Struct type constructors, in turn, have an internal slot `[[BaseType]]`, containing a reference to the type this type extends. For the `Struct` constructor, the value of this field is `null`.
+
+Conceptually then, the type-check proceeds as follows:
+ 1. Check that the receiver is an `object` with a `[[StructType]]` internal slot.
+ 2. Let *type* be the value of the receiver's `[[StructType]]` internal slot.
+ 3. While *type* is not `null`
+    1. If *type* is equal to *expectedType*, return *true*.
+    2. Let *type* be the value of *type*'s `[[BaseType]]` internal slot.
+
+
+*Note: in practice, implementations don't need to, and aren't expected to, perform this expensive test. Well-established [fast subtying checks that are equivalent to this check exist](https://www.researchgate.net/publication/221552851/download).*
 
 #### Overriding named fields
 
 Named fields can be overridden, but some restrictions apply:
  - A field can't change from mutable to immutable and vice-versa.
  - The type of mutable fields is invariant—the field's type must be exactly the same as the overridden field's type.
- - The type of immutable fields is covariant—the field's type can be a sub-type of the overridden field's type.
+ - The type of immutable fields is covariant—the field's type can be a subtype of the overridden field's type.
 
 #### Exotic behavior of Struct type instances
 
