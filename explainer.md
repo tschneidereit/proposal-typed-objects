@@ -9,7 +9,7 @@ The explainer proceeds as follows:
     - [Overview](#overview)
         - [Characteristics of Struct types](#characteristics-of-struct-types)
     - [Type definitions](#type-definitions)
-        - [Primitive type definitions](#primitive-type-definitions)
+        - [Value type definitions](#value-type-definitions)
         - [Struct type definitions](#struct-type-definitions)
             - [Typed field definitions](#typed-field-definitions)
             - [Struct type forward declaration](#struct-type-forward-declaration)
@@ -39,7 +39,7 @@ Typed Objects add a new type of objects to JavaScript: objects with pre-defined 
 Struct Types have these characteristics:
  - Fixed layout: a Struct's layout is fixed during construction, i.e. it is sealed during its entire lifetime.
  - Indexed typed member fields: a Struct has as own members an indexed list of typed fields, as given in its [definition](#struct-type-definitions).
- - Possible field types: typed fields can hold values as described in the [section on primitive type definitions](#primitive-type-definitions), or references to other Struct type instances.
+ - Possible field types: typed fields can hold values as described in the [section on value type definitions](#value-type-definitions), including references to other Struct type instances.
  - Named aliases as `prototype` accessors: typed fields can optionally be given a—String or Symbol—name, in which case an accessor is installed on the `prototype`.
  - Support for recursive types: Struct types can be forward-declared and filled in later, enabling support for—directly or indirectly—recursive types.
  - Inheritance: Struct types can extend other Struct types (but not other JS classes/constructor functions). Additional typed fields are appended to the end of the parent type's indexed list.
@@ -52,24 +52,20 @@ See individual sections for more details on these characteristics.
 
 The central part of the Typed Objects specification are *type definition objects*, generally called *type definitions* for short. Type definitions describe the fixed structure of a value.
 
-### Primitive type definitions
+### Value type definitions
 
-The system comes predefined with type definitions for all the
-primitive types:
+In addition to the `Struct` type [described below](#struct-type-definitions), Typed Objects provide a set of builtin types, exposed as functions:
 
     uint8  int8          any
     uint16 int16         string
     uint32 int32 float32 object
-    uint64 int64 float64
+    uint64 int64 float64 Struct (and subtypes)
 
-These primitive type definitions represent the various kinds of existing JS values. For example, the type `int32` describes a JS Number, `uint64` a BigNum, and `string` defines a JS string. The type `object` indicates a pointer to a JS object. Finally, `any` can be any kind of value (`undefined`, number, string, pointer to object, etc).
+These are used to specify a Struct type's fields' types. Writing to a typed field performs a coercion or type check equivalent to calling the respective function.
 
-Primitive type definitions can be called, in which case they act as a kind of cast or coercion. If you're familiar with C, these coercions are basically equivalent to C casts.
+The numeric types and the `string` type apply coercions: they ensure that the given value is of the right type by coercing it. For numeric types, the coercion is identical to [that applied when writing to an element in a Typed Object](https://tc39.github.io/ecma262/#sec-numbertorawbytes). For `string`, it's identical to that applied when coercing a value to string by other means, e.g. when appending it to an existing string: `"existing string" + value`.
 
-For numeric types, the behavior is identical to the [coercion performed when setting an element](https://tc39.github.io/ecma262/#sec-numbertorawbytes) on a Typed Array of the equivalent type.
-
-In some cases, coercions can throw. For example, in the case of
-`object`, the value being coerced must be an object or `null`:
+For `object` and `Struct` (and subtypes), a type check without coercion is performed:
 
 ```js
 object("foo") // throws
@@ -83,8 +79,6 @@ kind of value is acceptable:
 ```js
 any(x) === x
 ```
-
-In this spec, the set of primitive type definitions cannot be extended.
 
 ### Struct type definitions
 
@@ -169,15 +163,13 @@ Struct types will be specified as a new kind of [Integer-indexed Exotic Object](
 
 Reading a typed field doesn't involve any new behavior.
 
-For fields with numeric primitive types, it's identical to reading from Typed Arrays: the value [is returned as a BigInt for `int64` and `uint64`, and a Number for all other numeric types](https://tc39.github.io/proposal-bigint/#sec-rawbytestonumber).
+For fields with numeric types, it's identical to reading from Typed Arrays: the value [is returned as a BigInt for `int64` and `uint64`, and a Number for all other numeric types](https://tc39.github.io/proposal-bigint/#sec-rawbytestonumber).
 
 For fields with all other types, the value is returned as-is.
 
 #### Writing to typed fields
 
-When writing to a typed field, behavior depends on the field's type:
- - for [primitive types](#primitive-type-definitions), the type's coercion function is applied to the value, resulting in a coerced value to be stored, or an exception being thrown.
- - for [Struct types](#struct-type-definitions), the value is type checked: if it's not an instance of the expected type or of a type extending it, a `TypeError` is thrown. No coercion or conversion is attempted. See [below for details on type-checking for subtypes](#type-checking-for-subtypes).
+When writing to a typed field, the coercion or check applied to the given value [depends on the type](#value-type-definitions). See [below for details on type-checking for Struct subtypes](#type-checking-for-subtypes).
 
 #### Immutable typed fields
 
