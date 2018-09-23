@@ -23,7 +23,9 @@ The explainer proceeds as follows:
             - [Named typed fields](#named-typed-fields)
         - [Inheritance](#inheritance)
             - [Layout of subtypes](#layout-of-subtypes)
-            - [Type-checking for subtypes](#type-checking-for-subtypes)
+        - [Type-checking](#type-checking)
+            - [Nominal type-checking](#nominal-type-checking)
+            - [Structural type-checking](#structural-type-checking)
             - [Overriding named fields](#overriding-named-fields)
             - [Exotic behavior of Struct type instances](#exotic-behavior-of-struct-type-instances)
         - [Prototypes](#prototypes)
@@ -40,6 +42,7 @@ Struct Types have these characteristics:
  - Fixed layout: a Struct's layout is fixed during construction, i.e. it is sealed during its entire lifetime.
  - Indexed typed member fields: a Struct has as own members an indexed list of typed fields, as given in its [definition](#struct-type-definitions).
  - Possible field types: typed fields can hold values as described in the [section on value type definitions](#value-type-definitions), including references to other Struct type instances.
+ - For Struct types, a field can be marked as only applying a structural check.
  - Named aliases as `prototype` accessors: typed fields can optionally be given a—String or Symbol—name, in which case an accessor is installed on the `prototype`.
  - Support for recursive types: Struct types can be forward-declared and filled in later, enabling support for—directly or indirectly—recursive types.
  - Inheritance: Struct types can extend other Struct types (but not other JS classes/constructor functions). Additional typed fields are appended to the end of the parent type's indexed list.
@@ -59,13 +62,13 @@ In addition to the `Struct` type [described below](#struct-type-definitions), Ty
     uint8  int8          any
     uint16 int16         string
     uint32 int32 float32 object
-    uint64 int64 float64 Struct (and subtypes)
+    uint64 int64 float64
 
 These are used to specify a Struct type's fields' types. Writing to a typed field performs a coercion or type check equivalent to calling the respective function.
 
 The numeric types and the `string` type apply coercions: they ensure that the given value is of the right type by coercing it. For numeric types, the coercion is identical to [that applied when writing to an element in a Typed Object](https://tc39.github.io/ecma262/#sec-numbertorawbytes). For `string`, it's identical to that applied when coercing a value to string by other means, e.g. when appending it to an existing string: `"existing string" + value`.
 
-For `object` and `Struct` (and subtypes), a type check without coercion is performed:
+For `object`, a type check without coercion is performed:
 
 ```js
 object("foo") // throws
@@ -73,12 +76,13 @@ object({})    // returns the object {}
 object(null)  // returns null
 ```
 
-Finally, in the case of `any`, the coercion is a no-op, because any
-kind of value is acceptable:
+For `any`, the coercion is a no-op, because any kind of value is acceptable:
 
 ```js
 any(x) === x
 ```
+
+Finally, fields can also be given the structural or nomial type of other Struct types.
 
 ### Struct type definitions
 
@@ -100,6 +104,7 @@ Parameters:
 
 A typed field definition is an `object` definining the characteristics of a `Struct`'s typed field. It has the following members:
  - `type` - A [type definition](#type-definition), specifying the field's type.
+ - `structural` [optional] - A `boolean` indicating that, if `true`, the type check performed when writing to the field is structural, not nominal.
  - `name` [optional] - A `string` or `symbol` used as an optional name for the field. If given, an accessor is created that allows reading and, if the field is writable, writing the field using a name in addition to its index.
  - `readonly` [optional] - A `boolean`. If `true`, the field can only be set via the type's constructor and is immutable afterwards.
 
@@ -169,7 +174,7 @@ For fields with all other types, the value is returned as-is.
 
 #### Writing to typed fields
 
-When writing to a typed field, the coercion or check applied to the given value [depends on the type](#value-type-definitions). See [below for details on type-checking for Struct subtypes](#type-checking-for-subtypes).
+When writing to a typed field, the coercion or check applied to the given value [depends on the type](#value-type-definitions). See [below for details on type-checking for Struct types](#type-checking).
 
 #### Immutable typed fields
 
@@ -189,11 +194,13 @@ Struct types can extend other Struct types. If no base type is given, a Struct t
 
 A Struct type appends additional internal slots to the instances' layout: existing slots are never overridden, so subtypes can safely be treated as instances of their base types.
 
-#### Type-checking for subtypes
+### Type-checking
 
-When assigning to a field typed as a Struct type reference, instances of the expected Struct type itself and of all subtypes are acceptable.
+When assigning to a field typed as a Struct type reference, a structural or nominal type check is performed, depending on whether [the field has the `structural` flag set or not](#typed-field-definitions).
 
-To guarantee that an object passing the type-check can be treated as an instance of the expected type, the check has to guarantee that the object has, at least, the type's typed member fields. A simple `instanceof` check wouldn't work to ensure this: any arbitrary object can be made to pass such a test.
+#### Nominal type-checking
+
+For nominal type checks, instances of the expected Struct type itself and of all subtypes are acceptable. The applied test has to be stronger than `instanceof`, since that is easily falsifiable, removing the guarantees around the struct's layout and behavior.
 
 Instead, to facilitate type-checks, Struct type instances have an internal slot `[[StructType]]`, containing a reference to the associated Struct type constructor. Struct type constructors, in turn, have an internal slot `[[BaseType]]`, containing a reference to the type this type extends. For the `Struct` constructor, the value of this field is `null`.
 
@@ -204,8 +211,26 @@ Conceptually then, the type-check proceeds as follows:
     1. If *type* is equal to *expectedType*, return *true*.
     2. Let *type* be the value of *type*'s `[[BaseType]]` internal slot.
 
-
 *Note: in practice, implementations don't need to, and aren't expected to, perform this expensive test. Well-established [fast subtying checks that are equivalent to this check exist](https://www.researchgate.net/publication/221552851/download).*
+
+#### Structural type-checking
+
+A structural type-check ensures that the given value is a Struct type instance with—at least—the same typed fields, with the same types, as the field's type.
+
+Conceptually, the type-check proceeds as follows:
+ 1. Check that the receiver is an `object` with a `[[StructType]]` internal slot.
+ 2. Let *type* be the value of the receiver's `[[StructType]]` internal slot.
+ 3. Let *structure* be the value of *type*'s `[[Structure]]` internal slot.
+ 4. Let *expectedStructure* be the value of *expectedType*'s `[[Structure]]` internal slot.
+ 5. if the length of *structure* is smaller than the length of *expectedStructure*, return *false*.
+ 6. Let *index* be `0`.
+ 7. While *index* is smaller than the length of *expectedStructure*,
+    1. Let *field* be the value at the index *index* of *structure*
+    2. Let *expectedField* be the value at the index *index* of *expectedStructure*.
+    3. If the value of *field*'s internal slot `[[Type]]` is not equal to the value of *expectedType*'s internal slot `[[Type]]`, return `false`.
+    4. If the value of *field*'s internal slot `[[Writable]]` is not equal to the value of *expectedType*'s internal slot `[[Writable]]`, return `false`.
+
+*Note: Just as for nominal type checks, in practice, implementations don't need to, and aren't expected to, perform this expensive test. Well-established [fast subtying checks that are equivalent to this check exist](https://www.researchgate.net/publication/221552851/download).*
 
 #### Overriding named fields
 
