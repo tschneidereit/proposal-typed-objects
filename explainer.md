@@ -12,6 +12,7 @@ The explainer proceeds as follows:
         - [Value type definitions](#value-type-definitions)
         - [Struct type definitions](#struct-type-definitions)
             - [Typed field definitions](#typed-field-definitions)
+            - [Struct type references](#struct-type-references)
             - [Struct type forward declaration](#struct-type-forward-declaration)
     - [Instantiation](#instantiation)
         - [Instantiating struct types](#instantiating-struct-types)
@@ -23,9 +24,7 @@ The explainer proceeds as follows:
             - [Named typed fields](#named-typed-fields)
         - [Inheritance](#inheritance)
             - [Layout of subtypes](#layout-of-subtypes)
-        - [Type-checking](#type-checking)
-            - [Nominal type-checking](#nominal-type-checking)
-            - [Structural type-checking](#structural-type-checking)
+        - [Type-checking for struct type references](#type-checking-for-struct-type-references)
             - [Overriding named fields](#overriding-named-fields)
             - [Exotic behavior of Struct type instances](#exotic-behavior-of-struct-type-instances)
         - [Prototypes](#prototypes)
@@ -42,7 +41,6 @@ Struct Types have these characteristics:
  - Fixed layout: a Struct's layout is fixed during construction, i.e. it is sealed during its entire lifetime.
  - Indexed typed member fields: a Struct has as own members an indexed list of typed fields, as given in its [definition](#struct-type-definitions).
  - Possible field types: typed fields can hold values as described in the [section on value type definitions](#value-type-definitions), including references to other Struct type instances.
- - For Struct types, a field can be marked as only applying a structural check.
  - Named aliases as `prototype` accessors: typed fields can optionally be given a—String or Symbol—name, in which case an accessor is installed on the `prototype`.
  - Support for recursive types: Struct types can be forward-declared and filled in later, enabling support for—directly or indirectly—recursive types.
  - Inheritance: Struct types can extend other Struct types (but not other JS classes/constructor functions). Additional typed fields are appended to the end of the parent type's indexed list.
@@ -53,7 +51,13 @@ See individual sections for more details on these characteristics.
 
 ## Type definitions
 
-The central part of the Typed Objects specification are *type definition objects*, generally called *type definitions* for short. Type definitions describe the fixed structure of a value.
+The central part of the Typed Objects specification are *type definition objects*, generally called *type definitions* for short. Type definitions describe the fixed structure of a value, and are used to specify a struct type's fields' types.
+
+A type definition has an internal method `[[PerformTypeCheck]]`, which, given a value `V`, returns a new value `vResult` which is of the right type, or throws.
+
+The behavior of `[[PerformTypeCheck]]` for all types provided by this specification is described below.
+
+Host environments can provide exotic objects with different implementations of `[[PerformTypeCheck]]`.
 
 ### Value type definitions
 
@@ -64,7 +68,7 @@ In addition to the `Struct` type [described below](#struct-type-definitions), Ty
     uint32 int32 float32 object
     uint64 int64 float64
 
-These are used to specify a Struct type's fields' types. Writing to a typed field performs a coercion or type check equivalent to calling the respective function.
+These types provide implementations of the `[[PerformTypeCheck]]` internal method. Calling the type as a function executes the steps of the internal method.
 
 The numeric types and the `string` type apply coercions: they ensure that the given value is of the right type by coercing it. For numeric types, the coercion is identical to [that applied when writing to an element in a Typed Object](https://tc39.github.io/ecma262/#sec-numbertorawbytes). For `string`, it's identical to that applied when coercing a value to string by other means, e.g. when appending it to an existing string: `"existing string" + value`.
 
@@ -76,13 +80,13 @@ object({})    // returns the object {}
 object(null)  // returns null
 ```
 
+For [struct type references](#struct-type-references), the same kind of type check without coercion is performed, but the exact kind of check depends on the type.
+
 For `any`, the coercion is a no-op, because any kind of value is acceptable:
 
 ```js
 any(x) === x
 ```
-
-Finally, fields can also be given the structural or nomial type of other Struct types.
 
 ### Struct type definitions
 
@@ -104,9 +108,16 @@ Parameters:
 
 A typed field definition is an `object` definining the characteristics of a `Struct`'s typed field. It has the following members:
  - `type` - A [type definition](#type-definition), specifying the field's type.
- - `structural` [optional] - A `boolean` indicating that, if `true`, the type check performed when writing to the field is structural, not nominal.
  - `name` [optional] - A `string` or `symbol` used as an optional name for the field. If given, an accessor is created that allows reading and, if the field is writable, writing the field using a name in addition to its index.
  - `readonly` [optional] - A `boolean`. If `true`, the field can only be set via the type's constructor and is immutable afterwards.
+
+#### Struct type references
+
+Just as other JS objects, struct type instances are passed by reference. When defining a struct type, it is possible to give its fields types that only permit references to certain struct types. The type used for these fields is a value type—it's immutable and passed by value—where the value is a reference to a struct type instance. Each struct type is accompanied by one of these types, which can be accessed using the `ref` field on the type's constructor:
+```js
+const Point = new StructType([{ name: "x", type: float64 }, { name: "y", type: float64 }]);
+const Line  = new StructType([{ name: "from", type: Point.ref }, { name: "to", type: Point.ref }]);
+```
 
 #### Struct type forward declaration
 
@@ -121,7 +132,7 @@ The first overload declares a Struct type that extends `Struct`, the second crea
 The type can then be defined using its `define` method:
 ```js
 const LinkedList = StructType.declare("LinkedList");
-LinkedList.define([{ name: "next", type: LinkedList }]);
+LinkedList.define([{ name: "next", type: LinkedList.ref }]);
 ```
 
 `define` takes a single parameter, `typedFields`, and performs the same steps for defining the type's fields as `new StructType` does.
@@ -151,7 +162,7 @@ Any parameters passed are used as initial values for the type's typed fields:
 
 ```js
 const Point = new StructType([{ name: "x", type: float64 }, { name: "y", type: float64 }]);
-const Line  = new StructType([{ name: "from", type: Point }, { name: "to", type: Point }]);
+const Line  = new StructType([{ name: "from", type: Point.ref }, { name: "to", type: Point.ref }]);
 
 let from = new Point(42, 7);
 let line = new Line(from);
@@ -174,7 +185,7 @@ For fields with all other types, the value is returned as-is.
 
 #### Writing to typed fields
 
-When writing to a typed field, the coercion or check applied to the given value [depends on the type](#value-type-definitions). See [below for details on type-checking for Struct types](#type-checking).
+When writing to a typed field, the steps of the field's type's internal method `[[PerformTypeCheck]]` are executed. If the internal method completes successfully, the resulting value is stored in the field. This specification provides implementations of this internal method for [value types](#value-type-definitions) and for [struct type references](#type-checking-for-struct-type-references).
 
 #### Immutable typed fields
 
@@ -194,43 +205,21 @@ Struct types can extend other Struct types. If no base type is given, a Struct t
 
 A Struct type appends additional internal slots to the instances' layout: existing slots are never overridden, so subtypes can safely be treated as instances of their base types.
 
-### Type-checking
+### Type-checking for struct type references
 
-When assigning to a field typed as a Struct type reference, a structural or nominal type check is performed, depending on whether [the field has the `structural` flag set or not](#typed-field-definitions).
-
-#### Nominal type-checking
-
-For nominal type checks, instances of the expected Struct type itself and of all subtypes are acceptable. The applied test has to be stronger than `instanceof`, since that is easily falsifiable, removing the guarantees around the struct's layout and behavior.
+The type check for struct type references ensures that the given value is an instance of either the specified type itself, or of a sub-type. The applied test has to be stronger than `instanceof`, since that is easily falsifiable, removing the guarantees around the struct's layout and behavior.
 
 Instead, to facilitate type-checks, Struct type instances have an internal slot `[[StructType]]`, containing a reference to the associated Struct type constructor. Struct type constructors, in turn, have an internal slot `[[BaseType]]`, containing a reference to the type this type extends. For the `Struct` constructor, the value of this field is `null`.
 
-Conceptually then, the type-check proceeds as follows:
- 1. Check that the receiver is an `object` with a `[[StructType]]` internal slot.
- 2. Let *type* be the value of the receiver's `[[StructType]]` internal slot.
- 3. While *type* is not `null`
-    1. If *type* is equal to *expectedType*, return *true*.
-    2. Let *type* be the value of *type*'s `[[BaseType]]` internal slot.
+Given a value `V`, the `[[PerformTypeCheck]]` internal method of struct type reference types performs the following steps to verify type compatibility for the given value:
+ 1. Let `O` be `? ToObject(V)`.
+ 2. If `O` does not have the internal slot `[[StructType]]`, throw a `TypeError` exception.
+ 3. Let `type` be `O.[[StructType]]`.
+ 4. Repeat, while `type` is not `null`
+    1. If `type` is equal to *expectedType*, return *true*.
+    2. Let `type` be `type.[[BaseType]]`.
 
 *Note: in practice, implementations don't need to, and aren't expected to, perform this expensive test. Well-established [fast subtying checks that are equivalent to this check exist](https://www.researchgate.net/publication/221552851/download).*
-
-#### Structural type-checking
-
-A structural type-check ensures that the given value is a Struct type instance with—at least—the same typed fields, with the same types, as the field's type.
-
-Conceptually, the type-check proceeds as follows:
- 1. Check that the receiver is an `object` with a `[[StructType]]` internal slot.
- 2. Let *type* be the value of the receiver's `[[StructType]]` internal slot.
- 3. Let *structure* be the value of *type*'s `[[Structure]]` internal slot.
- 4. Let *expectedStructure* be the value of *expectedType*'s `[[Structure]]` internal slot.
- 5. if the length of *structure* is smaller than the length of *expectedStructure*, return *false*.
- 6. Let *index* be `0`.
- 7. While *index* is smaller than the length of *expectedStructure*,
-    1. Let *field* be the value at the index *index* of *structure*
-    2. Let *expectedField* be the value at the index *index* of *expectedStructure*.
-    3. If the value of *field*'s internal slot `[[Type]]` is not equal to the value of *expectedType*'s internal slot `[[Type]]`, return `false`.
-    4. If the value of *field*'s internal slot `[[Writable]]` is not equal to the value of *expectedType*'s internal slot `[[Writable]]`, return `false`.
-
-*Note: Just as for nominal type checks, in practice, implementations don't need to, and aren't expected to, perform this expensive test. Well-established [fast subtying checks that are equivalent to this check exist](https://www.researchgate.net/publication/221552851/download).*
 
 #### Overriding named fields
 
