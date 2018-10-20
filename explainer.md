@@ -68,7 +68,7 @@ In addition to the `Struct` type [described below](#struct-type-definitions), Ty
     uint32 int32 float32 object
     uint64 int64 float64
 
-These types provide implementations of the `[[PerformTypeCheck]]` internal method. Calling the type as a function executes the steps of the internal method.
+These value types provide implementations of the `[[PerformTypeCheck]]` internal method. Calling the value type as a function executes the steps of the internal method.
 
 The numeric types and the `string` type apply coercions: they ensure that the given value is of the right type by coercing it. For numeric types, the coercion is identical to [that applied when writing to an element in a Typed Object](https://tc39.github.io/ecma262/#sec-numbertorawbytes). For `string`, it's identical to that applied when coercing a value to string by other means, e.g. when appending it to an existing string: `"existing string" + value`.
 
