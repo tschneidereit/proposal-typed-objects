@@ -51,7 +51,7 @@ See individual sections for more details on these characteristics.
 
 ## Type definitions
 
-The central part of the Typed Objects specification are *type definition objects*, generally called *type definitions* for short. Type definitions describe the fixed structure of a value, and are used to specify a struct type's fields' types.
+The central part of the Typed Objects specification are *type definition objects*, generally called *type definitions* for short. Type definitions describe the fixed structure of an instance in memory, specifying a struct type's fields' types.
 
 A type definition has an internal method `[[PerformTypeCheck]]`, which, given a value `V`, returns a new value `vResult` which is of the right type, or throws.
 
