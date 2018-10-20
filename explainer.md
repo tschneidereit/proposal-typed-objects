@@ -185,7 +185,7 @@ For fields with all other types, the value is returned as-is.
 
 #### Writing to typed fields
 
-When writing to a typed field, the steps of the field's type's internal method `[[PerformTypeCheck]]` are executed. If the internal method completes successfully, the resulting value is stored in the field. This specification provides implementations of this internal method for [value types](#value-type-definitions) and for [struct type references](#type-checking-for-struct-type-references).
+When writing to a typed field, the steps of the field's type's internal method `[[PerformTypeCheck]]` are executed. If the internal method completes successfully, the resulting value is stored in the field. This specification provides implementations of this internal method for all the [builtin value types](#value-type-definitions).
 
 #### Immutable typed fields
 
