@@ -9,7 +9,7 @@ The explainer proceeds as follows:
     - [Overview](#overview)
         - [Characteristics of Struct types](#characteristics-of-struct-types)
     - [Type definitions](#type-definitions)
-        - [Value type definitions](#value-type-definitions)
+        - [Value Types](#value-types)
         - [Struct type definitions](#struct-type-definitions)
             - [Typed field definitions](#typed-field-definitions)
             - [Struct type references](#struct-type-references)
@@ -17,6 +17,7 @@ The explainer proceeds as follows:
     - [Instantiation](#instantiation)
         - [Instantiating struct types](#instantiating-struct-types)
     - [Struct type details](#struct-type-details)
+        - [Memory layout](#memory-layout)
         - [Typed fields](#typed-fields)
             - [Reading from typed fields](#reading-from-typed-fields)
             - [Writing to typed fields](#writing-to-typed-fields)
@@ -53,24 +54,30 @@ See individual sections for more details on these characteristics.
 
 The central part of the Typed Objects specification are *type definition objects*, generally called *type definitions* for short. Type definitions describe the fixed structure of an instance in memory, specifying a struct type's fields' types.
 
-A type definition has an internal method `[[PerformTypeCheck]]`, which, given a value `V`, returns a new value `vResult` which is of the right type, or throws.
+A type definition has the internal methods `[[Read]]` and `[[Write]]`, which convert between `Value` and internal representations for the type. `[[Write]]` additionally performs a type-specific type check.
 
-The behavior of `[[PerformTypeCheck]]` for all types provided by this specification is described below.
+For `[[Read]]` the abstract behavior is to take in an internal representation `I`, and return an equivalent value `V`.
 
-Host environments can provide exotic objects with different implementations of `[[PerformTypeCheck]]`.
+For `[[Write]]`, the abstract behavior is to take in a value `V` and perform type-specific steps to convert the value into an internal representation, or throw a `TypeError`.
 
-### Value type definitions
+The behavior of `[[Read]]` and `[[Write]]` for all types provided by this specification is described below.
 
-In addition to the `Struct` type [described below](#struct-type-definitions), Typed Objects provide a set of builtin types, exposed as functions:
+Host environments can provide exotic objects with different implementations of `[[Read]]` and `[[Write]]`.
+
+### Value Types
+
+The following common value type definitions are provided by this spec:
 
     uint8  int8          any
     uint16 int16         string
     uint32 int32 float32 object
-    uint64 int64 float64
+    uint64 int64 float64 ref
 
-These value types provide implementations of the `[[PerformTypeCheck]]` internal method. Calling the value type as a function executes the steps of the internal method.
+These value types provide implementations of the `[[Read]]` and `[[Write]]` internal methods. Calling the value type as a function executes the steps of the internal `[[Write]]` method.
 
-The numeric types and the `string` type apply coercions: they ensure that the given value is of the right type by coercing it. For numeric types, the coercion is identical to [that applied when writing to an element in a Typed Object](https://tc39.github.io/ecma262/#sec-numbertorawbytes). For `string`, it's identical to that applied when coercing a value to string by other means, e.g. when appending it to an existing string: `"existing string" + value`.
+For all of these types, `[[Read]]` converts from the internal representation to a value and returns it.
+
+For the numeric types and the `string` type, the implementations of `[[Write]]` apply coercions: they ensure that the given value is of the right type by coercing it. For numeric types, the coercion is identical to [that applied when writing to an element in a Typed Array](https://tc39.github.io/ecma262/#sec-numbertorawbytes). For `string`, it's identical to that applied when coercing a value to string by other means, e.g. when appending it to an existing string: `"existing string" + value`.
 
 For `object`, a type check without coercion is performed:
 
@@ -80,7 +87,7 @@ object({})    // returns the object {}
 object(null)  // returns null
 ```
 
-For [struct type references](#struct-type-references), the same kind of type check without coercion is performed, but the exact kind of check depends on the type.
+For [`ref`](#struct-type-references), the same kind of type check without coercion is performed, but the exact kind of check depends on the type. This specification provides a [definition of one type system](#type-checking-for-struct-type-references), but host environments can add additional type systems.
 
 For `any`, the coercion is a no-op, because any kind of value is acceptable:
 
@@ -118,6 +125,8 @@ Just as other JS objects, struct type instances are passed by reference. When de
 const Point = new StructType([{ name: "x", type: float64 }, { name: "y", type: float64 }]);
 const Line  = new StructType([{ name: "from", type: Point.ref }, { name: "to", type: Point.ref }]);
 ```
+
+Currently, this proposal only includes references to struct type instances. The set of reference value types can be extended by host environments, however. And future iterations of this proposal—or future proposals building on it—might add new reference value types to the language.
 
 #### Struct type forward declaration
 
@@ -171,21 +180,49 @@ console.log(line.from === from, line[0] === line.from, line.from.x); //logs "tru
 
 ## Struct type details
 
+Struct types are specified as a new kind of [Built-in Exotic Object](https://tc39.github.io/ecma262/#sec-built-in-exotic-object-internal-methods-and-slots). They override some internal methods, much like [Integer-Indexed Exotic Objects](https://tc39.github.io/ecma262/#sec-integer-indexed-exotic-objects) do.
+
+### Memory layout
+
+Struct type objects have the following internal slots:
+- `[[FieldTypes]]` — A list containing references to each of the type's field's types.
+
+Struct type instance objects have the following internal slots:
+- `[[StructType]]` — An immutable reference to the instance's type.
+- `[[Values]]` — A buffer containing byte representation of the values stored in the instance's fields.
+
+For the `Struct` type itself, `[[FieldTypes]]` is set to an empty list.
+
 ### Typed fields
 
-Struct types will be specified as a new kind of [Integer-indexed Exotic Object](https://tc39.github.io/ecma262/#sec-integer-indexed-exotic-objects): Struct types have their property access related internal methods overridden to perform type checking and coercion, and a Struct instance has a list of internal slots as storage for its typed member fields.
+Struct types have their property-access related internal methods overridden to perform type checking and coercion, based on the internal slots described above.
 
 #### Reading from typed fields
 
-Reading a typed field doesn't involve any new behavior.
+Reading from a typed field returns the result of converting the internal representation of the field's contents to a value representation, using the field's type's `[[Read]]` method.
 
-For fields with numeric types, it's identical to reading from Typed Arrays: the value [is returned as a BigInt for `int64` and `uint64`, and a Number for all other numeric types](https://tc39.github.io/proposal-bigint/#sec-rawbytestonumber).
-
-For fields with all other types, the value is returned as-is.
+In slightly more detail, a `[[Get]]` operation on a struct type instance `O` with property key `P`, and receiver `receiver` performs the following steps:
+  1. If [Type](https://tc39.github.io/ecma262/#sec-ecmascript-data-types-and-values)(P) is `String`, then
+      1. Let `numericIndex` be ! [CanonicalNumericIndexString](https://tc39.github.io/ecma262/#sec-canonicalnumericindexstring)(P) .
+      2. If `numericIndex` is not *undefined*, then
+          1. Let `fieldType` be `O.[[StructType]].[[FieldTypes]].[[numericIndex]]`.
+          2. Let `TV` be `O.[[Values]].[[numericIndex]]`.
+          3. Return ! `fieldType.[[Read]](TV)`.
+  2. Return ? [OrdinaryGet](https://tc39.github.io/ecma262/#sec-ordinaryget)(O, P, Receiver).
 
 #### Writing to typed fields
 
-When writing to a typed field, the steps of the field's type's internal method `[[PerformTypeCheck]]` are executed. If the internal method completes successfully, the resulting value is stored in the field. This specification provides implementations of this internal method for all the [builtin value types](#value-type-definitions).
+Writing to a typed field stores the result of converting the given value `V` to an internal representation as the field's contents, using the field's type's `[[Write]]` method.
+
+In slightly more detail, a `[[Set]]` operation on a struct type instance `O` with property key `P`, value `V`, and receiver `receiver` performs the following steps:
+  1. If [Type](https://tc39.github.io/ecma262/#sec-ecmascript-data-types-and-values)(P) is `String`, then
+      1. Let `numericIndex` be ! [CanonicalNumericIndexString](https://tc39.github.io/ecma262/#sec-canonicalnumericindexstring)(P) .
+      2. If `numericIndex` is not *undefined*, then
+          1. Let `fieldType` be `O.[[StructType]].[[FieldTypes]].[[numericIndex]]`.
+          2. Let `TV` be ? `fieldType.[[Write]](V)`.
+          3. Set `O.[[Values]].[[numericIndex]]` to `TV`.
+          4. Return `V`.
+  2. Return ? [OrdinaryGet](https://tc39.github.io/ecma262/#sec-ordinaryget)(O, P, Receiver).
 
 #### Immutable typed fields
 
@@ -203,7 +240,7 @@ Struct types can extend other Struct types. If no base type is given, a Struct t
 
 #### Layout of subtypes
 
-A Struct type appends additional internal slots to the instances' layout: existing slots are never overridden, so subtypes can safely be treated as instances of their base types.
+When initializing a struct type object `O` as a subtype of a struct type `P`, the supertype's fields are copied and additional fields are appended by extending `O`'s `[[FieldOffsets]]` and `[[FieldTypes]]` internal slots. Instances of the new struct type have their `[[Values]]` buffer extended accordingly.
 
 ### Type-checking for struct type references
 
@@ -211,7 +248,7 @@ The type check for struct type references ensures that the given value is an ins
 
 Instead, to facilitate type-checks, Struct type instances have an internal slot `[[StructType]]`, containing a reference to the associated Struct type constructor. Struct type constructors, in turn, have an internal slot `[[BaseType]]`, containing a reference to the type this type extends. For the `Struct` constructor, the value of this field is `null`.
 
-Given a value `V`, the `[[PerformTypeCheck]]` internal method of struct type reference types performs the following steps to verify type compatibility for the given value:
+Given a value `V`, the `[[Write]]` internal method of struct type reference types performs the following steps to verify type compatibility for the given value:
  1. Let `O` be `? ToObject(V)`.
  2. If `O` does not have the internal slot `[[StructType]]`, throw a `TypeError` exception.
  3. Let `type` be `O.[[StructType]]`.
