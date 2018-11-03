@@ -8,14 +8,14 @@ The explainer proceeds as follows:
     - [Outline](#outline)
     - [Overview](#overview)
         - [Characteristics of Struct types](#characteristics-of-struct-types)
-    - [Type definitions](#type-definitions)
-        - [Value Types](#value-types)
-        - [Struct type definitions](#struct-type-definitions)
+    - [Types](#types)
+    - [Value Types](#value-types)
+    - [Struct Types](#struct-types)
             - [Typed field definitions](#typed-field-definitions)
-            - [Struct type references](#struct-type-references)
-            - [Struct type forward declaration](#struct-type-forward-declaration)
+            - [Struct Type references](#struct-type-references)
+            - [Struct Type forward declaration](#struct-type-forward-declaration)
     - [Instantiation](#instantiation)
-        - [Instantiating struct types](#instantiating-struct-types)
+        - [Instantiating Struct Types](#instantiating-struct-types)
     - [Struct type details](#struct-type-details)
         - [Memory layout](#memory-layout)
         - [Typed fields](#typed-fields)
@@ -25,7 +25,7 @@ The explainer proceeds as follows:
             - [Named typed fields](#named-typed-fields)
         - [Inheritance](#inheritance)
             - [Layout of subtypes](#layout-of-subtypes)
-        - [Type-checking for struct type references](#type-checking-for-struct-type-references)
+        - [Type-checking for Struct Type references](#type-checking-for-struct-type-references)
             - [Overriding named fields](#overriding-named-fields)
             - [Exotic behavior of Struct type instances](#exotic-behavior-of-struct-type-instances)
         - [Prototypes](#prototypes)
@@ -41,7 +41,7 @@ Typed Objects add a new type of objects to JavaScript: objects with pre-defined 
 Struct Types have these characteristics:
  - Fixed layout: a Struct's layout is fixed during construction, i.e. it is sealed during its entire lifetime.
  - Indexed typed member fields: a Struct has as own members an indexed list of typed fields, as given in its [definition](#struct-type-definitions).
- - Possible field types: typed fields can hold values as described in the [section on value type definitions](#value-type-definitions), including references to other Struct type instances.
+ - Possible field types: typed fields can hold values as described in the [section on Value Type definitions](#value-type-definitions), including references to other Struct type instances.
  - Named aliases as `prototype` accessors: typed fields can optionally be given a—String or Symbol—name, in which case an accessor is installed on the `prototype`.
  - Support for recursive types: Struct types can be forward-declared and filled in later, enabling support for—directly or indirectly—recursive types.
  - Inheritance: Struct types can extend other Struct types (but not other JS classes/constructor functions). Additional typed fields are appended to the end of the parent type's indexed list.
@@ -50,32 +50,24 @@ Struct Types have these characteristics:
 
 See individual sections for more details on these characteristics.
 
-## Type definitions
+## Types
 
-The central part of the Typed Objects specification are *type definition objects*, generally called *type definitions* for short. Type definitions describe the fixed structure of an instance in memory, specifying a struct type's fields' types.
+The central part of the Typed Objects specification are [*Value Types*](#value-types) and [*Struct Types*](#struct-types). Instances of Value Types are immutable and don't have internal structure or object identity: they are primitive values similar to numeric values like `10.5` or `42`, or strings like `"foo"`. Instances of Struct Types are objects like `{ answer: 42 }`, except they have a fixed layout in memory, and each field is defined such that it can hold an instance of a Value Type (and only that, instead of arbitrary values).
 
-A type definition has the internal methods `[[Read]]` and `[[Write]]`, which convert between `Value` and internal representations for the type. `[[Write]]` additionally performs a type-specific type check.
+## Value Types
 
-For `[[Read]]` the abstract behavior is to take in an internal representation `I`, and return an equivalent value `V`.
-
-For `[[Write]]`, the abstract behavior is to take in a value `V` and perform type-specific steps to convert the value into an internal representation, or throw a `TypeError`.
-
-The behavior of `[[Read]]` and `[[Write]]` for all types provided by this specification is described below.
-
-Host environments can provide exotic objects with different implementations of `[[Read]]` and `[[Write]]`.
-
-### Value Types
-
-The following common value type definitions are provided by this spec:
+The following common Value Types are provided by this spec:
 
     uint8  int8          any
     uint16 int16         string
     uint32 int32 float32 object
-    uint64 int64 float64 ref
+    uint64 int64 float64 ref(T)
 
-These value types provide implementations of the `[[Read]]` and `[[Write]]` internal methods. Calling the value type as a function executes the steps of the internal `[[Write]]` method.
+They're exposed as *Function* objects with the internal methods `[[Read]]` and `[[Write]]`, which convert between `Value` and internal representations for the type. `[[Write]]` additionally performs a type-specific type check. Calling the Value Type object as a function executes the steps of the internal `[[Write]]` method followed by those of the internal `[[Read]]` method. I.e., it applies the steps for checking and converting from `Value` into the type's internal representation, and then back to `Value`.
 
-For all of these types, `[[Read]]` converts from the internal representation to a value and returns it.
+Host environments can provide additional kinds of Value Types, with their own implementations of `[[Read]]` and `[[Write]]`.
+
+For all Value Types provided by this specification, `[[Read]]` converts from the internal representation to a value and returns it. The behavior of `[[Write]]` for all types provided by this specification is described below.
 
 For the numeric types and the `string` type, the implementations of `[[Write]]` apply coercions: they ensure that the given value is of the right type by coercing it. For numeric types, the coercion is identical to [that applied when writing to an element in a Typed Array](https://tc39.github.io/ecma262/#sec-numbertorawbytes). For `string`, it's identical to that applied when coercing a value to string by other means, e.g. when appending it to an existing string: `"existing string" + value`.
 
@@ -87,7 +79,7 @@ object({})    // returns the object {}
 object(null)  // returns null
 ```
 
-For [`ref`](#struct-type-references), the same kind of type check without coercion is performed, but the exact kind of check depends on the type. This specification provides a [definition of one type system](#type-checking-for-struct-type-references), but host environments can add additional type systems.
+For [`ref(T)`](#struct-type-references), the same kind of type check without coercion is performed, but additionally the object is required to match `T`, in a manner [described below](#type-checking-for-struct-type-references).
 
 For `any`, the coercion is a no-op, because any kind of value is acceptable:
 
@@ -95,16 +87,16 @@ For `any`, the coercion is a no-op, because any kind of value is acceptable:
 any(x) === x
 ```
 
-### Struct type definitions
+## Struct Types
 
-Struct types are defined using the `StructType` constructor. There are two overloads of that constructor:
+Struct Types are defined using the `StructType` constructor, which has two overloads:
 
 ```js
 function StructType(typedFields, name = undefined)
 function StructType(baseType, typedFields, name = undefined)
 ```
 
-The difference between the two overloads is whether the type inherits from the base struct type, `Struct`, or a more specialized type.
+The difference between the two overloads is whether the type inherits from the base Struct Type, `Struct`, or a more specialized type.
 
 Parameters:
  - `baseType` - A `constructor function` whose instances are `instanceof Struct`, i.e. `Struct` or a sub-class of `Struct`.
@@ -114,29 +106,27 @@ Parameters:
 #### Typed field definitions
 
 A typed field definition is an `object` definining the characteristics of a `Struct`'s typed field. It has the following members:
- - `type` - A [type definition](#type-definition), specifying the field's type.
+ - `type` - A [Value Type](#value-types), specifying the field's type.
  - `name` [optional] - A `string` or `symbol` used as an optional name for the field. If given, an accessor is created that allows reading and, if the field is writable, writing the field using a name in addition to its index.
  - `readonly` [optional] - A `boolean`. If `true`, the field can only be set via the type's constructor and is immutable afterwards.
 
-#### Struct type references
+#### Struct Type references
 
-Just as other JS objects, struct type instances are passed by reference. When defining a struct type, it is possible to give its fields types that only permit references to certain struct types. The type used for these fields is a value type—it's immutable and passed by value—where the value is a reference to a struct type instance. Each struct type is accompanied by one of these types, which can be accessed using the `ref` field on the type's constructor:
+Just as other JS objects, Struct Type instances are passed by reference. These references are instances of [Value Types](#value-types). Defining a Struct Type using the `StructType` constructor actually defines two types: the Struct Type itself, and an accompanying Value Type for references to instances of the Struct Type. Just as other Value Types, it can be used as the type of a Struct Type's fields. This type is exposed as the `ref` property on the Struct Type's constructor:
 ```js
 const Point = new StructType([{ name: "x", type: float64 }, { name: "y", type: float64 }]);
 const Line  = new StructType([{ name: "from", type: Point.ref }, { name: "to", type: Point.ref }]);
 ```
 
-Currently, this proposal only includes references to struct type instances. The set of reference value types can be extended by host environments, however. And future iterations of this proposal—or future proposals building on it—might add new reference value types to the language.
+#### Struct Type forward declaration
 
-#### Struct type forward declaration
-
-To enable recursive types, it's possible to declare a Struct type without defining it. Declaration is done using `StructType.declare`, which has two overloads:
+To enable recursive types, it's possible to declare a Struct Type without defining it. Declaration is done using `StructType.declare`, which has two overloads:
 ```js
 StructType.declare(name)
 StructType.declare(baseType, name)
 ```
 
-The first overload declares a Struct type that extends `Struct`, the second creates a Struct type that extends the given `baseType`.
+The first overload declares a Struct Type that extends `Struct`, the second creates a Struct type that extends the given `baseType`.
 
 The type can then be defined using its `define` method:
 ```js
@@ -149,9 +139,9 @@ LinkedList.define([{ name: "next", type: LinkedList.ref }]);
 
 ## Instantiation
 
-### Instantiating struct types
+### Instantiating Struct Types
 
-You can create an instance of a struct type using the `new` operator:
+You can create an instance of a Struct Type using the `new` operator:
 
 ```js
 const Point = new StructType([{ name: "x", type: float64 }, { name: "y", type: float64 }]);
@@ -164,7 +154,7 @@ The resulting object is called a *typed object*: it will have the fields specifi
 If no parameters are passed, each field will be initialized to its type's default value:
  - `0` for numeric types
  - `''` for `string`
- - `null` for `object` and struct type references
+ - `null` for `object` and Struct Type references
  - `undefined` for `any`
 
 Any parameters passed are used as initial values for the type's typed fields:
@@ -201,12 +191,12 @@ Struct types have their property-access related internal methods overridden to p
 
 Reading from a typed field returns the result of converting the internal representation of the field's contents to a value representation, using the field's type's `[[Read]]` method.
 
-In slightly more detail, a `[[Get]]` operation on a struct type instance `O` with property key `P`, and receiver `receiver` performs the following steps:
+In slightly more detail, a `[[Get]]` operation on a Struct Type instance `O` with property key `P`, and receiver `receiver` performs the following steps:
   1. If [Type](https://tc39.github.io/ecma262/#sec-ecmascript-data-types-and-values)(P) is `String`, then
       1. Let `numericIndex` be ! [CanonicalNumericIndexString](https://tc39.github.io/ecma262/#sec-canonicalnumericindexstring)(P) .
       2. If `numericIndex` is not *undefined*, then
-          1. Let `fieldType` be `O.[[StructType]].[[FieldTypes]].[[numericIndex]]`.
-          2. Let `TV` be `O.[[Values]].[[numericIndex]]`.
+          1. Let `fieldType` be `O.[[StructType]].[[FieldTypes]][numericIndex]`.
+          2. Let `TV` be `O.[[Values]][numericIndex]`.
           3. Return ! `fieldType.[[Read]](TV)`.
   2. Return ? [OrdinaryGet](https://tc39.github.io/ecma262/#sec-ordinaryget)(O, P, Receiver).
 
@@ -214,13 +204,13 @@ In slightly more detail, a `[[Get]]` operation on a struct type instance `O` wit
 
 Writing to a typed field stores the result of converting the given value `V` to an internal representation as the field's contents, using the field's type's `[[Write]]` method.
 
-In slightly more detail, a `[[Set]]` operation on a struct type instance `O` with property key `P`, value `V`, and receiver `receiver` performs the following steps:
+In slightly more detail, a `[[Set]]` operation on a Struct Type instance `O` with property key `P`, value `V`, and receiver `receiver` performs the following steps:
   1. If [Type](https://tc39.github.io/ecma262/#sec-ecmascript-data-types-and-values)(P) is `String`, then
       1. Let `numericIndex` be ! [CanonicalNumericIndexString](https://tc39.github.io/ecma262/#sec-canonicalnumericindexstring)(P) .
       2. If `numericIndex` is not *undefined*, then
-          1. Let `fieldType` be `O.[[StructType]].[[FieldTypes]].[[numericIndex]]`.
+          1. Let `fieldType` be `O.[[StructType]].[[FieldTypes]][numericIndex]`.
           2. Let `TV` be ? `fieldType.[[Write]](V)`.
-          3. Set `O.[[Values]].[[numericIndex]]` to `TV`.
+          3. Set `O.[[Values]][numericIndex]` to `TV`.
           4. Return `V`.
   2. Return ? [OrdinaryGet](https://tc39.github.io/ecma262/#sec-ordinaryget)(O, P, Receiver).
 
@@ -240,15 +230,15 @@ Struct types can extend other Struct types. If no base type is given, a Struct t
 
 #### Layout of subtypes
 
-When initializing a struct type object `O` as a subtype of a struct type `P`, the supertype's fields are copied and additional fields are appended by extending `O`'s `[[FieldOffsets]]` and `[[FieldTypes]]` internal slots. Instances of the new struct type have their `[[Values]]` buffer extended accordingly.
+When initializing a Struct Type object `O` as a subtype of a Struct Type `P`, the supertype's fields are copied and additional fields are appended by extending `O`'s `[[FieldOffsets]]` and `[[FieldTypes]]` internal slots. Instances of the new Struct Type have their `[[Values]]` buffer extended accordingly.
 
-### Type-checking for struct type references
+### Type-checking for Struct Type references
 
-The type check for struct type references ensures that the given value is an instance of either the specified type itself, or of a sub-type. The applied test has to be stronger than `instanceof`, since that is easily falsifiable, removing the guarantees around the struct's layout and behavior.
+The type check for Struct Type references ensures that the given value is an instance of either the specified type itself, or of a sub-type. The applied test has to be stronger than `instanceof`, since that is easily falsifiable, removing the guarantees around the struct's layout and behavior.
 
 Instead, to facilitate type-checks, Struct type instances have an internal slot `[[StructType]]`, containing a reference to the associated Struct type constructor. Struct type constructors, in turn, have an internal slot `[[BaseType]]`, containing a reference to the type this type extends. For the `Struct` constructor, the value of this field is `null`.
 
-Given a value `V`, the `[[Write]]` internal method of struct type reference types performs the following steps to verify type compatibility for the given value:
+Given a value `V`, the `[[Write]]` internal method of Struct Type reference types performs the following steps to verify type compatibility for the given value:
  1. Let `O` be `? ToObject(V)`.
  2. If `O` does not have the internal slot `[[StructType]]`, throw a `TypeError` exception.
  3. Let `type` be `O.[[StructType]]`.
