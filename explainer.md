@@ -179,7 +179,7 @@ Struct type objects have the following internal slots:
 
 Struct type instance objects have the following internal slots:
 - `[[StructType]]` — An immutable reference to the instance's type.
-- `[[Values]]` — A buffer containing byte representation of the values stored in the instance's fields.
+- `[[Values]]` — A list of the abstract values for all the fields produce by the fields' associated Value Type `[[Write]]` method
 
 For the `Struct` type itself, `[[FieldTypes]]` is set to an empty list.
 
