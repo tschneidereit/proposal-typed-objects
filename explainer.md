@@ -11,9 +11,9 @@ The explainer proceeds as follows:
     - [Types](#types)
     - [Value Types](#value-types)
     - [Struct Types](#struct-types)
-            - [Typed field definitions](#typed-field-definitions)
-            - [Struct Type references](#struct-type-references)
-            - [Struct Type forward declaration](#struct-type-forward-declaration)
+        - [Typed field definitions](#typed-field-definitions)
+        - [Struct Type references](#struct-type-references)
+        - [Struct Type forward declaration](#struct-type-forward-declaration)
     - [Instantiation](#instantiation)
         - [Instantiating Struct Types](#instantiating-struct-types)
     - [Struct type details](#struct-type-details)
@@ -103,14 +103,14 @@ Parameters:
  - `typedFields` - An `Iterable` list of [typed field definitions](#typed-field-definitions).
  - `name` [optional] - A `string` used as the type's name.
 
-#### Typed field definitions
+### Typed field definitions
 
 A typed field definition is an `object` definining the characteristics of a `Struct`'s typed field. It has the following members:
  - `type` - A [Value Type](#value-types), specifying the field's type.
  - `name` [optional] - A `string` or `symbol` used as an optional name for the field. If given, an accessor is created that allows reading and, if the field is writable, writing the field using a name in addition to its index.
  - `readonly` [optional] - A `boolean`. If `true`, the field can only be set via the type's constructor and is immutable afterwards.
 
-#### Struct Type references
+### Struct Type references
 
 Just as other JS objects, Struct Type instances are passed by reference. These references are instances of [Value Types](#value-types). Defining a Struct Type using the `StructType` constructor actually defines two types: the Struct Type itself, and an accompanying Value Type for references to instances of the Struct Type. Just as other Value Types, it can be used as the type of a Struct Type's fields. This type is exposed as the `ref` property on the Struct Type's constructor:
 ```js
@@ -118,7 +118,7 @@ const Point = new StructType([{ name: "x", type: float64 }, { name: "y", type: f
 const Line  = new StructType([{ name: "from", type: Point.ref }, { name: "to", type: Point.ref }]);
 ```
 
-#### Struct Type forward declaration
+### Struct Type forward declaration
 
 To enable recursive types, it's possible to declare a Struct Type without defining it. Declaration is done using `StructType.declare`, which has two overloads:
 ```js
